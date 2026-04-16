@@ -4,7 +4,7 @@ $host = 'localhost';
 $dbname = 'arogya_solar';
 $username = 'root';
 // NOTE TO USER: If your local MySQL setup has a password, enter it here.
-$password = '';
+$password = 's';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
