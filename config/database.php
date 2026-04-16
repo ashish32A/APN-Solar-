@@ -4,8 +4,9 @@ $host = 'localhost';
 $dbname = 'arogya_solar';
 $username = 'root';
 // NOTE TO USER: If your local MySQL setup has a password, enter it here.
-$password = 'ss';
+$password = 'allinone@2552';
 
+echo "Database Connection successful";
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

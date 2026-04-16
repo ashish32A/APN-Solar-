@@ -11,7 +11,7 @@
             if(sidebar.style.display === 'none') {
                 sidebar.style.display = 'block';
                 main.style.marginLeft = '250px';
-                main.style.width = 'calc(100% - 250px)';
+                main.style.width = 'calc(100% - 249px)';
             } else {
                 sidebar.style.display = 'none';
                 main.style.marginLeft = '0';
