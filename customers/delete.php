@@ -25,12 +25,23 @@ if (!$customer) {
     exit;
 }
 
-// On POST confirmation — delete cascade (payments & installations deleted via FK ON DELETE CASCADE)
+// On POST confirmation — delete with explicit cascade in correct FK order
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_delete'])) {
     try {
-        $pdo->prepare("DELETE FROM customers WHERE id = ?")->execute([$id]);
+        $pdo->beginTransaction();
+
+        // Delete child records in FK-safe order
+        $pdo->prepare("DELETE FROM followups    WHERE customer_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM complaints   WHERE customer_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM dispatches   WHERE customer_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM payments     WHERE customer_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM installations WHERE customer_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM customers    WHERE id = ?")->execute([$id]);
+
+        $pdo->commit();
         setFlash('success', 'Customer "' . htmlspecialchars($customer['name']) . '" deleted successfully.');
     } catch (PDOException $e) {
+        $pdo->rollBack();
         setFlash('error', 'Delete failed: ' . $e->getMessage());
     }
     header("Location: /APN-Solar/customers/");
