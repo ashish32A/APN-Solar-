@@ -218,10 +218,10 @@ $endRecord   = min($page * $perPage, $totalRecords);
                                     onclick="markNotInterested(<?php echo $row['id']; ?>)">
                                 <i class="fas fa-ban"></i> Not Interested
                             </button>
-                            <button class="btn btn-sm" style="background:#f59e0b;color:#fff;width:100%;font-size:.72rem;"
-                                    onclick="addFollowup(<?php echo $row['id']; ?>)">
+                            <a href="/APN-Solar/customers/followup.php?id=<?php echo (int)$row['id']; ?>"
+                               class="btn btn-sm" style="background:#f59e0b;color:#fff;width:100%;font-size:.72rem;justify-content:center;">
                                 <i class="fas fa-phone-alt"></i> Followup
-                            </button>
+                            </a>
                         </div>
                     </td>
                 </tr>
@@ -348,13 +348,6 @@ function markNotInterested(id) {
       .catch(()=>alert('Request failed'));
 }
 
-function addFollowup(id) {
-    const note = prompt('Enter followup note:');
-    if (note === null) return;
-    fetch('/APN-Solar/customers/ajax_followup.php', {
-        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:'id='+id+'&note='+encodeURIComponent(note)
-    }).then(r=>r.json()).then(d => { d.success ? location.reload() : alert('Error: '+d.message); })
-      .catch(()=>alert('Request failed'));
-}
+
+
 </script>

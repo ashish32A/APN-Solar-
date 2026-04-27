@@ -1,12 +1,310 @@
-﻿<?php
-require_once __DIR__ . '/../../../app/Middleware/AuthMiddleware.php';
-require_once __DIR__ . '/../../../config/database.php';
+<?php
+// masters/dispatch/index.php — Dispatch Master list
+
+require_once __DIR__ . '/../../app/Middleware/AuthMiddleware.php';
+require_once __DIR__ . '/../../app/Helpers/FlashHelper.php';
+require_once __DIR__ . '/../../config/database.php';
+
 requireLogin();
-$pageTitle = 'Dispatch Master';
-include __DIR__ . '/../../../views/partials/header.php';
+
+// ── Auto-add extra columns to dispatches table ────────────────────────────────
+try {
+    $dCols = $pdo->query("SHOW COLUMNS FROM dispatches")->fetchAll(PDO::FETCH_COLUMN);
+    $addDCols = [
+        'driver'     => "VARCHAR(100) DEFAULT NULL",
+        'van'        => "VARCHAR(100) DEFAULT NULL",
+        'mobile'     => "VARCHAR(20) DEFAULT NULL",
+        'status'     => "ENUM('Pending','Dispatched','Delivered') DEFAULT 'Pending'",
+        'remarks'    => "TEXT DEFAULT NULL",
+        'updated_at' => "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+    ];
+    foreach ($addDCols as $col => $def) {
+        if (!in_array($col, $dCols)) {
+            $pdo->exec("ALTER TABLE dispatches ADD COLUMN `$col` $def");
+        }
+    }
+} catch (PDOException $e) {}
+
+$pageTitle    = 'Dispatch Master';
+$validPerPage = [10, 25, 50, 100];
+$requestedPer = (int)($_GET['per_page'] ?? 10);
+$perPage      = in_array($requestedPer, $validPerPage) ? $requestedPer : 10;
+$page         = max(1, (int)($_GET['page'] ?? 1));
+$search       = trim($_GET['search'] ?? '');
+
+$where  = "WHERE 1=1";
+$params = [];
+if ($search !== '') {
+    $where   .= " AND (d.dispatch_no LIKE ? OR c.name LIKE ? OR d.driver LIKE ? OR d.van LIKE ? OR d.mobile LIKE ?)";
+    $like     = "%$search%";
+    $params   = [$like, $like, $like, $like, $like];
+}
+
+try {
+    $cStmt = $pdo->prepare("SELECT COUNT(*) FROM dispatches d LEFT JOIN customers c ON d.customer_id = c.id $where");
+    $cStmt->execute($params);
+    $totalRecords = (int)$cStmt->fetchColumn();
+} catch (PDOException $e) { $totalRecords = 0; }
+
+$totalPages = max(1, (int)ceil($totalRecords / $perPage));
+$page       = min($page, $totalPages);
+$offset     = ($page - 1) * $perPage;
+
+try {
+    $stmt = $pdo->prepare("
+        SELECT d.*, c.name AS customer_name
+        FROM dispatches d
+        LEFT JOIN customers c ON d.customer_id = c.id
+        $where
+        ORDER BY d.id DESC
+        LIMIT $perPage OFFSET $offset
+    ");
+    $stmt->execute($params);
+    $dispatches = $stmt->fetchAll();
+} catch (PDOException $e) { $dispatches = []; }
+
+$flash = null;
+if (isset($_SESSION['flash'])) { $flash = $_SESSION['flash']; unset($_SESSION['flash']); }
+
+include __DIR__ . '/../../views/partials/header.php';
+
+function dispUrl(array $ov = []): string {
+    $p = array_merge(['search' => $_GET['search'] ?? '', 'page' => $_GET['page'] ?? 1, 'per_page' => $_GET['per_page'] ?? 10], $ov);
+    $q = http_build_query(array_filter($p, fn($v) => $v !== ''));
+    return '/APN-Solar/masters/dispatch/index.php' . ($q ? '?' . $q : '');
+}
 ?>
-<div style="padding:20px;">
-  <h2 style="margin-bottom:16px;">Dispatch Master</h2>
-  <p style="color:#6c757d;">This module is under development. Connect your controller and view here.</p>
+
+<style>
+.dm-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px; }
+.dm-header h2 { font-size:1.15rem;font-weight:700;color:#1e293b; }
+.btn { display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:7px;font-size:.83rem;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:all .15s;text-decoration:none;white-space:nowrap; }
+.btn-primary { background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff; }
+.btn-excel   { background:#1d6f42;color:#fff; }
+.btn-warning { background:#f59e0b;color:#fff; }
+.btn-danger  { background:#ef4444;color:#fff; }
+.btn-secondary{background:#f1f5f9;color:#475569;border:1.5px solid #e2e8f0; }
+.btn-sm      { padding:4px 11px;font-size:.75rem; }
+.btn:hover   { opacity:.87;transform:translateY(-1px); }
+.action-btns { display:flex;gap:4px; }
+
+.top-btns { display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap; }
+.ctrl-bar { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px; }
+.show-wrap { display:flex;align-items:center;gap:6px;font-size:.82rem;color:#64748b; }
+.show-wrap select { padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:.82rem; }
+.search-wrap { display:flex;align-items:center;gap:6px;font-size:.82rem;color:#64748b; }
+.search-wrap input { padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:.82rem;font-family:inherit;outline:none;width:210px; }
+.search-wrap input:focus { border-color:#3b82f6; }
+
+.table-wrap { background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden; }
+.table-responsive { overflow-x:auto;-webkit-overflow-scrolling:touch; }
+.table { width:100%;border-collapse:collapse;font-size:.8rem;color:#1e293b; }
+.table thead th { background:#f0f4f8;padding:9px 10px;font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;text-align:left; }
+.table thead th.sortable { cursor:pointer;user-select:none; }
+.table thead th.sortable::after { content:' ⇅';opacity:.3;font-size:.6rem; }
+.table thead th.sort-asc::after  { content:' ↑';opacity:1; }
+.table thead th.sort-desc::after { content:' ↓';opacity:1; }
+.table tbody td { padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:middle; }
+.table tbody tr:hover { background:#f8fbff; }
+.table tbody tr:last-child td { border-bottom:none; }
+.table tbody tr.hidden-row { display:none; }
+
+.badge-dispatched { background:#dbeafe;color:#1e40af;border-radius:20px;padding:2px 9px;font-size:.68rem;font-weight:700; }
+.badge-delivered  { background:#dcfce7;color:#15803d;border-radius:20px;padding:2px 9px;font-size:.68rem;font-weight:700; }
+.badge-pending    { background:#fef3c7;color:#92400e;border-radius:20px;padding:2px 9px;font-size:.68rem;font-weight:700; }
+
+.flash-alert   { display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:8px;font-size:.875rem;font-weight:500;margin-bottom:12px; }
+.flash-success { background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a; }
+.flash-error   { background:#fef2f2;border:1px solid #fecaca;color:#dc2626; }
+
+.pagination-bar { display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid #e2e8f0;flex-wrap:wrap;gap:8px;font-size:.8rem;color:#64748b; }
+.pagination { display:flex;gap:4px;flex-wrap:wrap; }
+.pg-btn { display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#475569;font-size:.78rem;font-weight:600;cursor:pointer;text-decoration:none;transition:all .15s; }
+.pg-btn:hover    { background:#f1f5f9; }
+.pg-btn.active   { background:#3b82f6;border-color:#3b82f6;color:#fff; }
+.pg-btn.disabled { opacity:.4;pointer-events:none; }
+
+/* Delete confirm modal */
+.modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;align-items:center;justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:#fff;border-radius:12px;padding:32px 36px;max-width:420px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25); }
+.modal-icon { font-size:2.8rem;color:#ef4444;margin-bottom:14px; }
+.modal-box h3 { font-size:1.1rem;font-weight:700;color:#1e293b;margin-bottom:8px; }
+.modal-box p  { color:#64748b;font-size:.88rem;margin-bottom:18px; }
+.modal-actions { display:flex;gap:10px;justify-content:center; }
+</style>
+
+<?php if ($flash): ?>
+<div class="flash-alert flash-<?php echo $flash['type'] === 'success' ? 'success' : 'error'; ?>">
+    <i class="fas fa-<?php echo $flash['type'] === 'success' ? 'check-circle' : 'exclamation-circle'; ?>"></i>
+    <?php echo htmlspecialchars($flash['message']); ?>
 </div>
-<?php include __DIR__ . '/../../../views/partials/footer.php'; ?>
+<?php endif; ?>
+
+<div class="dm-header">
+    <h2><i class="fas fa-truck" style="color:#3b82f6;margin-right:7px;"></i>Dispatches</h2>
+</div>
+
+<div class="top-btns">
+    <a href="/APN-Solar/masters/dispatch/create.php" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Create New Dispatch
+    </a>
+    <button class="btn btn-excel" onclick="dispExportExcel()">
+        <i class="fas fa-file-excel"></i> Excel
+    </button>
+</div>
+
+<div class="ctrl-bar">
+    <form method="GET" action="/APN-Solar/masters/dispatch/index.php" class="show-wrap">
+        <?php if ($search): ?><input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>"><?php endif; ?>
+        <label>Show</label>
+        <select name="per_page" onchange="this.form.submit()">
+            <?php foreach ($validPerPage as $n): ?>
+                <option value="<?php echo $n; ?>" <?php echo $perPage == $n ? 'selected' : ''; ?>><?php echo $n; ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>entries</label>
+    </form>
+    <div class="search-wrap">
+        <label>Search:</label>
+        <input type="text" id="dispSearch" placeholder="Dispatch no., customer, driver..."
+               oninput="dispFilter(this.value)" value="<?php echo htmlspecialchars($search); ?>">
+    </div>
+</div>
+
+<div class="table-wrap">
+    <div class="table-responsive">
+        <table class="table" id="dispTable">
+            <thead>
+                <tr>
+                    <th class="sortable" onclick="dispSort(0)" style="width:55px;">Sr No.</th>
+                    <th class="sortable" onclick="dispSort(1)">Dispatch No.</th>
+                    <th class="sortable" onclick="dispSort(2)">Customer</th>
+                    <th class="sortable" onclick="dispSort(3)">Dispatched Date</th>
+                    <th class="sortable" onclick="dispSort(4)">Driver</th>
+                    <th class="sortable" onclick="dispSort(5)">Van</th>
+                    <th class="sortable" onclick="dispSort(6)">Mobile</th>
+                    <th class="sortable" onclick="dispSort(7)">Status</th>
+                    <th class="sortable" onclick="dispSort(8)">Remarks</th>
+                    <th class="sortable" onclick="dispSort(9)">Last Updated on</th>
+                    <th style="width:110px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php if ($dispatches):
+                $rowNum = ($page - 1) * $perPage + 1;
+                foreach ($dispatches as $d): ?>
+                <tr>
+                    <td><?php echo $rowNum++; ?></td>
+                    <td><strong><?php echo htmlspecialchars($d['dispatch_no'] ?? ''); ?></strong></td>
+                    <td><?php echo htmlspecialchars($d['customer_name'] ?? ''); ?></td>
+                    <td style="white-space:nowrap;font-size:.76rem;"><?php echo htmlspecialchars(substr($d['dispatch_date'] ?? '', 0, 16)); ?></td>
+                    <td><?php echo htmlspecialchars($d['driver'] ?? ''); ?></td>
+                    <td><?php echo htmlspecialchars($d['van'] ?? ''); ?></td>
+                    <td><?php echo htmlspecialchars($d['mobile'] ?? ''); ?></td>
+                    <td>
+                        <?php $st = $d['status'] ?? 'Pending';
+                        $cls = strtolower($st);
+                        echo "<span class=\"badge-$cls\">$st</span>"; ?>
+                    </td>
+                    <td style="max-width:130px;word-wrap:break-word;"><?php echo htmlspecialchars($d['notes'] ?? $d['remarks'] ?? ''); ?></td>
+                    <td style="white-space:nowrap;font-size:.76rem;"><?php echo htmlspecialchars(substr($d['updated_at'] ?? $d['created_at'] ?? '', 0, 16)); ?></td>
+                    <td>
+                        <div class="action-btns">
+                            <a href="/APN-Solar/masters/dispatch/edit.php?id=<?php echo (int)$d['id']; ?>" class="btn btn-warning btn-sm">
+                                <i class="fas fa-pencil-alt"></i> Edit
+                            </a>
+                            <button class="btn btn-danger btn-sm"
+                                    onclick="dispConfirmDelete(<?php echo (int)$d['id']; ?>, '<?php echo addslashes(htmlspecialchars($d['dispatch_no'] ?? 'this dispatch')); ?>')">
+                                <i class="fas fa-trash-alt"></i> Delete
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr><td colspan="11" style="text-align:center;padding:40px;color:#94a3b8;">
+                    <i class="fas fa-truck" style="font-size:2rem;display:block;margin-bottom:10px;"></i>
+                    No dispatches found<?php echo $search ? ' matching your search.' : '.'; ?>
+                </td></tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <div class="pagination-bar">
+        <span>Showing <strong><?php echo $totalRecords > 0 ? number_format(($page-1)*$perPage+1) : 0; ?>–<?php echo number_format(min($page*$perPage,$totalRecords)); ?></strong> of <strong><?php echo number_format($totalRecords); ?></strong> entries</span>
+        <div class="pagination">
+            <?php if ($page > 1): ?><a class="pg-btn" href="<?php echo dispUrl(['page'=>$page-1]); ?>">Previous</a><?php else: ?><span class="pg-btn disabled">Previous</span><?php endif; ?>
+            <?php $ws=max(1,$page-2);$we=min($totalPages,$page+2);
+              if($ws>1){echo '<a class="pg-btn" href="'.dispUrl(['page'=>1]).'">1</a>'; if($ws>2) echo '<span class="pg-btn disabled">…</span>';}
+              for($p=$ws;$p<=$we;$p++) echo '<a class="pg-btn '.($p===$page?'active':'').'" href="'.dispUrl(['page'=>$p]).'">'.$p.'</a>';
+              if($we<$totalPages){if($we<$totalPages-1) echo '<span class="pg-btn disabled">…</span>'; echo '<a class="pg-btn" href="'.dispUrl(['page'=>$totalPages]).'">'.$totalPages.'</a>';}
+            ?>
+            <?php if ($page < $totalPages): ?><a class="pg-btn" href="<?php echo dispUrl(['page'=>$page+1]); ?>">Next</a><?php else: ?><span class="pg-btn disabled">Next</span><?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal-box">
+        <div class="modal-icon"><i class="fas fa-trash-alt"></i></div>
+        <h3>Delete Dispatch?</h3>
+        <p id="deleteMsg">This will permanently delete this dispatch record.</p>
+        <div class="modal-actions">
+            <form id="deleteForm" method="POST" action="/APN-Solar/masters/dispatch/delete.php">
+                <input type="hidden" name="id" id="deleteId">
+                <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash-alt"></i> Yes, Delete</button>
+            </form>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function dispFilter(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('#dispTable tbody tr').forEach(r => {
+        r.classList.toggle('hidden-row', q !== '' && !r.innerText.toLowerCase().includes(q));
+    });
+}
+
+let dSortCol=-1, dSortAsc=true;
+function dispSort(col) {
+    const ths = document.querySelectorAll('#dispTable thead th');
+    ths.forEach(t => t.classList.remove('sort-asc','sort-desc'));
+    if(dSortCol===col){dSortAsc=!dSortAsc;}else{dSortCol=col;dSortAsc=true;}
+    ths[col].classList.add(dSortAsc?'sort-asc':'sort-desc');
+    const tbody=document.querySelector('#dispTable tbody');
+    const rows=[...tbody.querySelectorAll('tr')].filter(r=>!r.querySelector('[colspan]'));
+    rows.sort((a,b)=>{const va=a.cells[col]?.innerText.trim()||'',vb=b.cells[col]?.innerText.trim()||'';const na=parseFloat(va),nb=parseFloat(vb);const c=(!isNaN(na)&&!isNaN(nb))?na-nb:va.localeCompare(vb);return dSortAsc?c:-c;});
+    rows.forEach(r=>tbody.appendChild(r));
+}
+
+function dispConfirmDelete(id, no) {
+    document.getElementById('deleteId').value = id;
+    document.getElementById('deleteMsg').textContent = 'Permanently delete dispatch "' + no + '"?';
+    document.getElementById('deleteModal').classList.add('open');
+}
+document.getElementById('deleteModal').addEventListener('click', e => { if(e.target===document.getElementById('deleteModal')) document.getElementById('deleteModal').classList.remove('open'); });
+
+function dispExportExcel() {
+    const rows = document.querySelectorAll('#dispTable tr');
+    let html = '<table border="1"><thead>';
+    let inBody = false;
+    rows.forEach(row => {
+        const isHead = row.closest('thead');
+        if(isHead&&!inBody) html+='<tr>';
+        else if(!isHead&&!inBody){html+='</thead><tbody><tr>';inBody=true;}
+        else html+='<tr>';
+        row.querySelectorAll('th,td').forEach((cell,i)=>{if(i===10)return;const tag=isHead?'th':'td';html+=`<${tag}>${cell.innerText.trim()}</${tag}>`;});
+        html+='</tr>';
+    });
+    html+='</tbody></table>';
+    const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8;'});
+    const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'dispatches_'+new Date().toISOString().slice(0,10)+'.xls'});
+    a.click();URL.revokeObjectURL(a.href);
+}
+</script>
+
+<?php include __DIR__ . '/../../views/partials/footer.php'; ?>

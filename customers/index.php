@@ -23,7 +23,7 @@ $where  = "WHERE 1=1";
 $params = [];
 
 if ($search !== '') {
-    $where   .= " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.email LIKE ? OR c.operator_name LIKE ?)";
+    $where   .= " AND (c.name LIKE ? OR c.mobile LIKE ? OR c.emai l LIKE ? OR c.operator_name LIKE ?)";
     $like     = "%$search%";
     $params[] = $like; $params[] = $like; $params[] = $like; $params[] = $like;
 }

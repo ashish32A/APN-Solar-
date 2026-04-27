@@ -26,23 +26,45 @@ if (!$customer) {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fields = ['operator_name','group_name','name','email','mobile',
-               'ifsc_code','electricity_id','kw','account_number','district_name','remarks','followup_remarks'];
+    $fields = [
+        'group_name', 'district_name', 'name', 'mobile', 'email', 'state', 'block', 
+        'gram_panchayat', 'village', 'address', 'pincode', 'electricity_id', 
+        'division_name', 'kw', 'app_ref_no', 'registration_date', 'js_cash_ecofy', 
+        'account_number', 'js_bank_name', 'js_bank_branch', 'js_ifsc_code', 
+        'js_date', 'doc_submission_date', 'model_number', 'remarks'
+    ];
     $data = [];
     foreach ($fields as $f) {
-        $data[$f] = trim($_POST[$f] ?? '');
+        $val = trim($_POST[$f] ?? '');
+        $data[$f] = $val === '' ? null : $val;
     }
     $data['id'] = $id;
+
+    $backParam = trim($_POST['back'] ?? '');
+    $backUrl   = match($backParam) {
+        'pending'                       => '/APN-Solar/customers/pending_list.php',
+        'pending_account_number'        => '/APN-Solar/reports/pending_account_number.php',
+        'customer_registration_pending' => '/APN-Solar/reports/customer_registration_pending.php',
+        'customer_jan_samarth_pending'  => '/APN-Solar/reports/customer_jan_samarth_pending.php',
+        'subsidy_first'                 => '/APN-Solar/reports/pending_subsidy_first.php',
+        'subsidy_second'                => '/APN-Solar/reports/pending_subsidy_second.php',
+        default                         => '/APN-Solar/customers/',
+    };
 
     if (empty($data['name'])) {
         $error = "Customer name is required.";
     } else {
         try {
             $sql = "UPDATE customers SET
-                    operator_name=:operator_name, group_name=:group_name, name=:name,
-                    email=:email, mobile=:mobile, ifsc_code=:ifsc_code,
-                    electricity_id=:electricity_id, kw=:kw, account_number=:account_number,
-                    district_name=:district_name, remarks=:remarks, followup_remarks=:followup_remarks
+                    group_name=:group_name, district_name=:district_name, name=:name,
+                    mobile=:mobile, email=:email, state=:state, block=:block,
+                    gram_panchayat=:gram_panchayat, village=:village, address=:address,
+                    pincode=:pincode, electricity_id=:electricity_id, division_name=:division_name,
+                    kw=:kw, app_ref_no=:app_ref_no, registration_date=:registration_date,
+                    js_cash_ecofy=:js_cash_ecofy, account_number=:account_number,
+                    js_bank_name=:js_bank_name, js_bank_branch=:js_bank_branch,
+                    js_ifsc_code=:js_ifsc_code, js_date=:js_date, doc_submission_date=:doc_submission_date,
+                    model_number=:model_number, remarks=:remarks
                     WHERE id=:id";
             $pdo->prepare($sql)->execute($data);
 
@@ -52,8 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $existingPayment = $pdo->prepare("SELECT id FROM payments WHERE customer_id = ?");
                 $existingPayment->execute([$id]);
                 if ($existingPayment->fetch()) {
-                    $pdo->prepare("UPDATE payments SET total_amount=?, due_amount=? WHERE customer_id=?")
-                        ->execute([$totalAmt, $totalAmt, $id]);
+                    $pdo->prepare("UPDATE payments SET total_amount=?, due_amount=total_amount-payment_received WHERE customer_id=?")
+                        ->execute([$totalAmt, $id]);
                 } else {
                     $pdo->prepare("INSERT INTO payments (customer_id, total_amount, due_amount, payment_received) VALUES (?,?,?,0)")
                         ->execute([$id, $totalAmt, $totalAmt]);
@@ -61,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             setFlash('success', 'Customer updated successfully.');
-            header("Location: /APN-Solar/customers/");
+            header("Location: $backUrl");
             exit;
         } catch (PDOException $e) {
             $error = "Database error: " . $e->getMessage();
@@ -72,147 +94,211 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Fetch groups for dropdown
-$groups = $pdo->query("SELECT DISTINCT group_name FROM customers WHERE group_name != '' ORDER BY group_name")->fetchAll();
+$groups = $pdo->query("SELECT DISTINCT name FROM `groups` ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
 
 $pageTitle = 'Edit Customer';
 include __DIR__ . '/../views/partials/header.php';
 ?>
 
 <style>
-.page-card { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.12); padding:28px 32px; max-width:900px; }
-.page-title { font-size:1.25rem; font-weight:700; color:#1e293b; margin-bottom:24px; display:flex; align-items:center; gap:10px; }
-.page-title i { color:#f59e0b; }
-.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-.form-grid .full { grid-column:1/-1; }
-.form-group label { display:block; font-size:.78rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
-.form-group input, .form-group select, .form-group textarea {
-    width:100%; padding:10px 14px; border:1.5px solid #e2e8f0; border-radius:8px;
-    font-size:.92rem; font-family:inherit; color:#1e293b; background:#f8fafc;
-    transition:border-color .2s, box-shadow .2s; outline:none;
-}
-.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-    border-color:#f59e0b; background:#fff; box-shadow:0 0 0 3px rgba(245,158,11,.12);
-}
-.form-group textarea { resize:vertical; min-height:80px; }
-.form-actions { display:flex; gap:12px; margin-top:24px; padding-top:20px; border-top:1px solid #e2e8f0; }
-.btn { display:inline-flex; align-items:center; gap:7px; padding:10px 22px; border-radius:8px;
-       font-size:.9rem; font-weight:600; cursor:pointer; border:none; font-family:inherit;
-       transition:all .15s; text-decoration:none; }
-.btn-primary { background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; box-shadow:0 4px 12px rgba(245,158,11,.3); }
-.btn-primary:hover { transform:translateY(-1px); }
-.btn-secondary { background:#f1f5f9; color:#475569; border:1.5px solid #e2e8f0; }
-.btn-secondary:hover { background:#e2e8f0; }
-.alert-error { background:#fef2f2; border:1px solid #fecaca; color:#dc2626; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:.875rem; }
-.badge-id { background:#f1f5f9; color:#64748b; font-size:.75rem; padding:4px 10px; border-radius:20px; font-weight:600; }
-.section-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#94a3b8; margin:20px 0 12px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; grid-column:1/-1; }
+    body { background-color: #f4f6f9; }
+    .content-wrapper { padding: 20px; }
+    .card { background: #fff; border: 1px solid #dee2e6; border-radius: .25rem; margin-bottom: 20px; }
+    .card-header { padding: .75rem 1.25rem; border-bottom: 1px solid rgba(0,0,0,.125); background-color: rgba(0,0,0,.03); }
+    .card-title { font-size: 1.1rem; font-weight: 400; margin: 0; }
+    .card-body { padding: 1.25rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: .5rem; font-weight: 700; color: #333; font-size: 0.9rem; }
+    .form-control { display: block; width: 100%; height: calc(2.25rem + 2px); padding: .375rem .75rem; font-size: 1rem; font-weight: 400; line-height: 1.5; color: #495057; background-color: #fff; background-clip: padding-box; border: 1px solid #ced4da; border-radius: .25rem; transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out; }
+    .form-control:focus { border-color: #80bdff; outline: 0; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+    textarea.form-control { height: auto; }
+    .btn-update { background-color: #007bff; border-color: #007bff; color: #fff; padding: .375rem .75rem; border-radius: .25rem; font-size: 1rem; cursor: pointer; }
+    .btn-update:hover { background-color: #0069d9; border-color: #0062cc; }
+    .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; padding: .75rem 1.25rem; margin-bottom: 1rem; border: 1px solid transparent; border-radius: .25rem; }
 </style>
 
-<div class="page-card">
-    <div class="page-title">
-        <i class="fas fa-user-edit"></i>
-        Edit Customer
-        <span class="badge-id">ID #<?php echo $id; ?></span>
+<div class="content-wrapper">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Edit Customer</h3>
+        </div>
+        <div class="card-body">
+            <?php if (!empty($error)): ?>
+                <div class="alert-danger"><?= $error ?></div>
+            <?php endif; ?>
+
+            <form method="POST">
+                <input type="hidden" name="back" value="<?= htmlspecialchars($_GET['back'] ?? '') ?>">
+
+                <div class="form-group">
+                    <label>Group</label>
+                    <select name="group_name" class="form-control">
+                        <option value="">-- Select Group --</option>
+                        <?php foreach ($groups as $g): ?>
+                            <option value="<?= htmlspecialchars($g) ?>" <?= ($customer['group_name'] ?? '') === $g ? 'selected' : '' ?>><?= htmlspecialchars($g) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>District</label>
+                    <input type="text" name="district_name" class="form-control" value="<?= htmlspecialchars($customer['district_name'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Customer Name</label>
+                    <input type="text" name="name" class="form-control" value="<?= htmlspecialchars($customer['name'] ?? '') ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Mobile Number</label>
+                    <input type="text" name="mobile" class="form-control" value="<?= htmlspecialchars($customer['mobile'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" class="form-control" value="<?= htmlspecialchars($customer['email'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>State</label>
+                    <select name="state" class="form-control">
+                        <option value="Uttar Pradesh" <?= ($customer['state'] ?? '') === 'Uttar Pradesh' ? 'selected' : '' ?>>Uttar Pradesh</option>
+                        <!-- Add other states if needed -->
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>District</label>
+                    <select name="district_name_select" class="form-control">
+                        <option value="<?= htmlspecialchars($customer['district_name'] ?? '') ?>"><?= htmlspecialchars($customer['district_name'] ?? 'Select District') ?></option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Block</label>
+                    <select name="block" class="form-control">
+                        <option value="<?= htmlspecialchars($customer['block'] ?? '') ?>"><?= htmlspecialchars($customer['block'] ?? 'Select Block') ?></option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Gram Panchayat</label>
+                    <select name="gram_panchayat" class="form-control">
+                        <option value="<?= htmlspecialchars($customer['gram_panchayat'] ?? '') ?>"><?= htmlspecialchars($customer['gram_panchayat'] ?? 'Select Gram Panchayat') ?></option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Village</label>
+                    <select name="village" class="form-control">
+                        <option value="<?= htmlspecialchars($customer['village'] ?? '') ?>"><?= htmlspecialchars($customer['village'] ?? 'Select Village') ?></option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Address</label>
+                    <textarea name="address" class="form-control" rows="3"><?= htmlspecialchars($customer['address'] ?? '') ?></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Pincode</label>
+                    <input type="text" name="pincode" class="form-control" value="<?= htmlspecialchars($customer['pincode'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Electricity Account ID</label>
+                    <input type="text" name="electricity_id" class="form-control" value="<?= htmlspecialchars($customer['electricity_id'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Division Name</label>
+                    <input type="text" name="division_name" class="form-control" value="<?= htmlspecialchars($customer['division_name'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>KW</label>
+                    <input type="text" name="kw" class="form-control" value="<?= htmlspecialchars($customer['kw'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Application Reference No</label>
+                    <input type="text" name="app_ref_no" class="form-control" value="<?= htmlspecialchars($customer['app_ref_no'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Registration Date</label>
+                    <input type="date" name="registration_date" class="form-control" value="<?= htmlspecialchars($customer['registration_date'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Jan Samarth / Cash / Ecofy</label>
+                    <input type="text" name="js_cash_ecofy" class="form-control" value="<?= htmlspecialchars($customer['js_cash_ecofy'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Account Number</label>
+                    <input type="text" name="account_number" class="form-control" value="<?= htmlspecialchars($customer['account_number'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Jan Samarth Bank Name</label>
+                    <input type="text" name="js_bank_name" class="form-control" value="<?= htmlspecialchars($customer['js_bank_name'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Jan Samarth Bank Branch</label>
+                    <input type="text" name="js_bank_branch" class="form-control" value="<?= htmlspecialchars($customer['js_bank_branch'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Jan Samarth IFSC Code</label>
+                    <input type="text" name="js_ifsc_code" class="form-control" value="<?= htmlspecialchars($customer['js_ifsc_code'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Jan Samarth Date</label>
+                    <input type="date" name="js_date" class="form-control" value="<?= htmlspecialchars($customer['js_date'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Document Submission Date</label>
+                    <input type="date" name="doc_submission_date" class="form-control" value="<?= htmlspecialchars($customer['doc_submission_date'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Model Number</label>
+                    <select name="model_number" class="form-control">
+                        <option value="">-- Select Model Number --</option>
+                        <option value="Arogya On Grid Model" <?= ($customer['model_number'] ?? '') === 'Arogya On Grid Model' ? 'selected' : '' ?>>Arogya On Grid Model</option>
+                        <option value="Arogya Off Grid Model" <?= ($customer['model_number'] ?? '') === 'Arogya Off Grid Model' ? 'selected' : '' ?>>Arogya Off Grid Model</option>
+                        <option value="Arogya Hybrid Model" <?= ($customer['model_number'] ?? '') === 'Arogya Hybrid Model' ? 'selected' : '' ?>>Arogya Hybrid Model</option>
+                        <option value="Arogya Resko Village Model" <?= ($customer['model_number'] ?? '') === 'Arogya Resko Village Model' ? 'selected' : '' ?>>Arogya Resko Village Model</option>
+                        <option value="Arogya Village Model" <?= ($customer['model_number'] ?? '') === 'Arogya Village Model' ? 'selected' : '' ?>>Arogya Village Model</option>
+                        <option value="Arogya City Model" <?= ($customer['model_number'] ?? '') === 'Arogya City Model' ? 'selected' : '' ?>>Arogya City Model</option>
+                        <option value="Arogya On Grid With TATA" <?= ($customer['model_number'] ?? '') === 'Arogya On Grid With TATA' ? 'selected' : '' ?>>Arogya On Grid With TATA</option>
+                        <option value="Arogya Commercial On Grid" <?= ($customer['model_number'] ?? '') === 'Arogya Commercial On Grid' ? 'selected' : '' ?>>Arogya Commercial On Grid</option>
+                        <option value="Arogya Solar Ata Chakki" <?= ($customer['model_number'] ?? '') === 'Arogya Solar Ata Chakki' ? 'selected' : '' ?>>Arogya Solar Ata Chakki</option>
+                        <option value="Arogya Solar Pump" <?= ($customer['model_number'] ?? '') === 'Arogya Solar Pump' ? 'selected' : '' ?>>Arogya Solar Pump</option>
+                        <option value="Arogya On Grid Normal" <?= ($customer['model_number'] ?? '') === 'Arogya On Grid Normal' ? 'selected' : '' ?>>Arogya On Grid Normal</option>
+                        <option value="Arogya Resko Hybrid" <?= ($customer['model_number'] ?? '') === 'Arogya Resko Hybrid' ? 'selected' : '' ?>>Arogya Resko Hybrid</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Total Amount</label>
+                    <input type="number" step="0.01" name="total_amount" class="form-control" value="<?= htmlspecialchars($customer['total_amount'] ?? '') ?>">
+                </div>
+
+                <div class="form-group">
+                    <label>Remarks</label>
+                    <textarea name="remarks" class="form-control" rows="3"><?= htmlspecialchars($customer['remarks'] ?? '') ?></textarea>
+                </div>
+
+                <button type="submit" class="btn-update">Update Customer</button>
+            </form>
+        </div>
     </div>
-
-    <?php if (!empty($error)): ?>
-        <div class="alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo $error; ?></div>
-    <?php endif; ?>
-
-    <form method="POST" action="">
-        <div class="form-grid">
-
-            <div class="section-label">Basic Information</div>
-
-            <div class="form-group">
-                <label>Customer Name <span style="color:#dc2626">*</span></label>
-                <input type="text" name="name" value="<?php echo htmlspecialchars($customer['name'] ?? ''); ?>" required>
-            </div>
-
-            <div class="form-group">
-                <label>Mobile Number</label>
-                <input type="text" name="mobile" maxlength="15" value="<?php echo htmlspecialchars($customer['mobile'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" name="email" value="<?php echo htmlspecialchars($customer['email'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Operator Name</label>
-                <input type="text" name="operator_name" value="<?php echo htmlspecialchars($customer['operator_name'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Group Name</label>
-                <select name="group_name">
-                    <option value="">-- Select Group --</option>
-                    <?php foreach ($groups as $g): ?>
-                        <option value="<?php echo htmlspecialchars($g['group_name']); ?>"
-                            <?php echo ($customer['group_name'] ?? '') === $g['group_name'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($g['group_name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                    <option value="<?php echo htmlspecialchars($customer['group_name'] ?? ''); ?>"
-                        <?php echo !empty($customer['group_name']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($customer['group_name'] ?? ''); ?>
-                    </option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>District</label>
-                <input type="text" name="district_name" value="<?php echo htmlspecialchars($customer['district_name'] ?? ''); ?>">
-            </div>
-
-            <div class="section-label">Solar / Financial Details</div>
-
-            <div class="form-group">
-                <label>KW (Solar Capacity)</label>
-                <input type="number" name="kw" step="0.01" value="<?php echo htmlspecialchars($customer['kw'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Total Amount (₹)</label>
-                <input type="number" name="total_amount" step="0.01" value="<?php echo htmlspecialchars($customer['total_amount'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Electricity Consumer ID</label>
-                <input type="text" name="electricity_id" value="<?php echo htmlspecialchars($customer['electricity_id'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Bank Account Number</label>
-                <input type="text" name="account_number" value="<?php echo htmlspecialchars($customer['account_number'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>IFSC Code</label>
-                <input type="text" name="ifsc_code" value="<?php echo htmlspecialchars($customer['ifsc_code'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group full">
-                <label>Remarks</label>
-                <textarea name="remarks"><?php echo htmlspecialchars($customer['remarks'] ?? ''); ?></textarea>
-            </div>
-
-            <div class="form-group full">
-                <label>Followup Remarks</label>
-                <textarea name="followup_remarks"><?php echo htmlspecialchars($customer['followup_remarks'] ?? ''); ?></textarea>
-            </div>
-
-        </div>
-
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i> Update Customer
-            </button>
-            <a href="/APN-Solar/customers/" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Cancel
-            </a>
-        </div>
-    </form>
 </div>
 
 <?php include __DIR__ . '/../views/partials/footer.php'; ?>

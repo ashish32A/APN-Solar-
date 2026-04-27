@@ -9,31 +9,45 @@ requireLogin();
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fields = ['operator_name','group_name','name','email','mobile',
-               'ifsc_code','electricity_id','kw','account_number','district_name','remarks'];
+    $fields = [
+        'group_name', 'district_name', 'name', 'mobile', 'email', 'state', 'block', 
+        'gram_panchayat', 'village', 'address', 'pincode', 'electricity_id', 
+        'division_name', 'kw', 'app_ref_no', 'registration_date', 'js_cash_ecofy', 
+        'account_number', 'js_bank_name', 'js_bank_branch', 'js_ifsc_code', 
+        'js_date', 'doc_submission_date', 'model_number', 'remarks'
+    ];
     $data = [];
     foreach ($fields as $f) {
-        $data[$f] = trim($_POST[$f] ?? '');
+        $val = trim($_POST[$f] ?? '');
+        $data[$f] = $val === '' ? null : $val;
     }
 
     if (empty($data['name'])) {
         $error = "Customer name is required.";
     } else {
         try {
-            $sql = "INSERT INTO customers (operator_name, group_name, name, email, mobile,
-                    ifsc_code, electricity_id, kw, account_number, district_name, remarks)
-                    VALUES (:operator_name, :group_name, :name, :email, :mobile,
-                    :ifsc_code, :electricity_id, :kw, :account_number, :district_name, :remarks)";
+            $sql = "INSERT INTO customers (
+                        group_name, district_name, name, mobile, email, state, block,
+                        gram_panchayat, village, address, pincode, electricity_id,
+                        division_name, kw, app_ref_no, registration_date, js_cash_ecofy,
+                        account_number, js_bank_name, js_bank_branch, js_ifsc_code,
+                        js_date, doc_submission_date, model_number, remarks, status
+                    ) VALUES (
+                        :group_name, :district_name, :name, :mobile, :email, :state, :block,
+                        :gram_panchayat, :village, :address, :pincode, :electricity_id,
+                        :division_name, :kw, :app_ref_no, :registration_date, :js_cash_ecofy,
+                        :account_number, :js_bank_name, :js_bank_branch, :js_ifsc_code,
+                        :js_date, :doc_submission_date, :model_number, :remarks, 'pending'
+                    )";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($data);
 
-            // Also create a default payment record
             $newId = $pdo->lastInsertId();
             $totalAmt = !empty($_POST['total_amount']) ? (float)$_POST['total_amount'] : 0;
             $pdo->prepare("INSERT INTO payments (customer_id, total_amount, due_amount, payment_received)
                            VALUES (?,?,?,0)")->execute([$newId, $totalAmt, $totalAmt]);
 
-            setFlash('success', 'Customer "' . htmlspecialchars($data['name']) . '" created successfully.');
+            setFlash('success', 'Customer created successfully.');
             header("Location: /APN-Solar/customers/");
             exit;
         } catch (PDOException $e) {
@@ -43,136 +57,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Fetch groups for dropdown
-$groups = $pdo->query("SELECT DISTINCT group_name FROM customers WHERE group_name != '' ORDER BY group_name")->fetchAll();
+$groups = $pdo->query("SELECT DISTINCT name FROM `groups` ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
 
 $pageTitle = 'Create New Customer';
 include __DIR__ . '/../views/partials/header.php';
 ?>
 
 <style>
-.page-card { background:#fff; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.12); padding:28px 32px; max-width:900px; }
-.page-title { font-size:1.25rem; font-weight:700; color:#1e293b; margin-bottom:24px; display:flex; align-items:center; gap:10px; }
-.page-title i { color:#f59e0b; }
-.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-.form-grid .full { grid-column:1/-1; }
-.form-group label { display:block; font-size:.78rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
-.form-group input, .form-group select, .form-group textarea {
-    width:100%; padding:10px 14px; border:1.5px solid #e2e8f0; border-radius:8px;
-    font-size:.92rem; font-family:inherit; color:#1e293b; background:#f8fafc;
-    transition:border-color .2s, box-shadow .2s; outline:none;
-}
-.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-    border-color:#f59e0b; background:#fff; box-shadow:0 0 0 3px rgba(245,158,11,.12);
-}
-.form-group textarea { resize:vertical; min-height:80px; }
-.form-actions { display:flex; gap:12px; margin-top:24px; padding-top:20px; border-top:1px solid #e2e8f0; }
-.btn { display:inline-flex; align-items:center; gap:7px; padding:10px 22px; border-radius:8px;
-       font-size:.9rem; font-weight:600; cursor:pointer; border:none; font-family:inherit;
-       transition:all .15s; text-decoration:none; }
-.btn-primary { background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; box-shadow:0 4px 12px rgba(245,158,11,.3); }
-.btn-primary:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(245,158,11,.4); }
-.btn-secondary { background:#f1f5f9; color:#475569; border:1.5px solid #e2e8f0; }
-.btn-secondary:hover { background:#e2e8f0; }
-.alert-error { background:#fef2f2; border:1px solid #fecaca; color:#dc2626; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:.875rem; }
-.section-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#94a3b8; margin:20px 0 12px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; grid-column:1/-1; }
+    body { background-color: #f4f6f9; }
+    .content-wrapper { padding: 20px; }
+    .card { background: #fff; border: 1px solid #dee2e6; border-radius: .25rem; margin-bottom: 20px; }
+    .card-header { padding: .75rem 1.25rem; border-bottom: 1px solid rgba(0,0,0,.125); background-color: rgba(0,0,0,.03); }
+    .card-title { font-size: 1.1rem; font-weight: 400; margin: 0; }
+    .card-body { padding: 1.25rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: .5rem; font-weight: 700; color: #333; font-size: 0.9rem; }
+    .form-control { display: block; width: 100%; height: calc(2.25rem + 2px); padding: .375rem .75rem; font-size: 1rem; font-weight: 400; line-height: 1.5; color: #495057; background-color: #fff; background-clip: padding-box; border: 1px solid #ced4da; border-radius: .25rem; transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out; }
+    .form-control:focus { border-color: #80bdff; outline: 0; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+    textarea.form-control { height: auto; }
+    .btn-save { background-color: #007bff; border-color: #007bff; color: #fff; padding: .375rem .75rem; border-radius: .25rem; font-size: 1rem; cursor: pointer; }
+    .btn-save:hover { background-color: #0069d9; border-color: #0062cc; }
 </style>
 
-<div class="page-card">
-    <div class="page-title">
-        <i class="fas fa-user-plus"></i>
-        Create New Customer
+<div class="content-wrapper">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Create New Customer</h3>
+        </div>
+        <div class="card-body">
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger"><?= $error ?></div>
+            <?php endif; ?>
+
+            <form method="POST">
+                <div class="form-group">
+                    <label>Group</label>
+                    <select name="group_name" class="form-control">
+                        <option value="">-- Select Group --</option>
+                        <?php foreach ($groups as $g): ?>
+                            <option value="<?= htmlspecialchars($g) ?>"><?= htmlspecialchars($g) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>District</label>
+                    <input type="text" name="district_name" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Customer Name</label>
+                    <input type="text" name="name" class="form-control" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Mobile Number</label>
+                    <input type="text" name="mobile" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>State</label>
+                    <select name="state" class="form-control">
+                        <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Address</label>
+                    <textarea name="address" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Pincode</label>
+                    <input type="text" name="pincode" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Electricity Account ID</label>
+                    <input type="text" name="electricity_id" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Division Name</label>
+                    <input type="text" name="division_name" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>KW</label>
+                    <input type="text" name="kw" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Model Number</label>
+                    <select name="model_number" class="form-control">
+                        <option value="">-- Select Model Number --</option>
+                        <option value="Arogya On Grid Model">Arogya On Grid Model</option>
+                        <option value="Arogya Off Grid Model">Arogya Off Grid Model</option>
+                        <option value="Arogya Hybrid Model">Arogya Hybrid Model</option>
+                        <option value="Arogya Resko Village Model">Arogya Resko Village Model</option>
+                        <option value="Arogya Village Model">Arogya Village Model</option>
+                        <option value="Arogya City Model">Arogya City Model</option>
+                        <option value="Arogya On Grid With TATA">Arogya On Grid With TATA</option>
+                        <option value="Arogya Commercial On Grid">Arogya Commercial On Grid</option>
+                        <option value="Arogya Solar Ata Chakki">Arogya Solar Ata Chakki</option>
+                        <option value="Arogya Solar Pump">Arogya Solar Pump</option>
+                        <option value="Arogya On Grid Normal">Arogya On Grid Normal</option>
+                        <option value="Arogya Resko Hybrid">Arogya Resko Hybrid</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Total Amount</label>
+                    <input type="number" step="0.01" name="total_amount" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label>Remarks</label>
+                    <textarea name="remarks" class="form-control" rows="3"></textarea>
+                </div>
+
+                <button type="submit" class="btn-save">Save Customer</button>
+            </form>
+        </div>
     </div>
-
-    <?php if (!empty($error)): ?>
-        <div class="alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo $error; ?></div>
-    <?php endif; ?>
-
-    <form method="POST" action="">
-        <div class="form-grid">
-
-            <div class="section-label">Basic Information</div>
-
-            <div class="form-group">
-                <label>Customer Name <span style="color:#dc2626">*</span></label>
-                <input type="text" name="name" placeholder="Full name" value="<?php echo htmlspecialchars($_POST['name'] ?? ''); ?>" required>
-            </div>
-
-            <div class="form-group">
-                <label>Mobile Number</label>
-                <input type="text" name="mobile" placeholder="10-digit mobile" maxlength="15" value="<?php echo htmlspecialchars($_POST['mobile'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" name="email" placeholder="email@example.com" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Operator Name</label>
-                <input type="text" name="operator_name" placeholder="Operator name" value="<?php echo htmlspecialchars($_POST['operator_name'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Group Name</label>
-                <select name="group_name">
-                    <option value="">-- Select Group --</option>
-                    <?php foreach ($groups as $g): ?>
-                        <option value="<?php echo htmlspecialchars($g['group_name']); ?>"
-                            <?php echo ($_POST['group_name'] ?? '') === $g['group_name'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($g['group_name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                    <option value="__new__">+ Add new group...</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>District</label>
-                <input type="text" name="district_name" placeholder="District name" value="<?php echo htmlspecialchars($_POST['district_name'] ?? ''); ?>">
-            </div>
-
-            <div class="section-label">Solar / Financial Details</div>
-
-            <div class="form-group">
-                <label>KW (Solar Capacity)</label>
-                <input type="number" name="kw" step="0.01" placeholder="e.g. 2.00" value="<?php echo htmlspecialchars($_POST['kw'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Total Amount (₹)</label>
-                <input type="number" name="total_amount" step="0.01" placeholder="e.g. 130000" value="<?php echo htmlspecialchars($_POST['total_amount'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Electricity Consumer ID</label>
-                <input type="text" name="electricity_id" placeholder="Electricity consumer ID" value="<?php echo htmlspecialchars($_POST['electricity_id'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>Bank Account Number</label>
-                <input type="text" name="account_number" placeholder="Account number" value="<?php echo htmlspecialchars($_POST['account_number'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group">
-                <label>IFSC Code</label>
-                <input type="text" name="ifsc_code" placeholder="e.g. SBIN0050689" value="<?php echo htmlspecialchars($_POST['ifsc_code'] ?? ''); ?>">
-            </div>
-
-            <div class="form-group full">
-                <label>Remarks</label>
-                <textarea name="remarks" placeholder="Any additional notes..."><?php echo htmlspecialchars($_POST['remarks'] ?? ''); ?></textarea>
-            </div>
-        </div>
-
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i> Save Customer
-            </button>
-            <a href="/APN-Solar/customers/" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Cancel
-            </a>
-        </div>
-    </form>
 </div>
 
 <?php include __DIR__ . '/../views/partials/footer.php'; ?>
